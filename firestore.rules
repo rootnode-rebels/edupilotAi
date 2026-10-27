@@ -48,17 +48,18 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       
       // Public registration: Users can create their own profile ONLY with 'student' role.
-      // Client-submitted 'teacher' role creation is strictly forbidden.
-      allow create: if (isOwner(userId) && request.resource.data.role == 'student') || isAdmin();
+      // Verified Teachers and Admins can provision teachers or student profiles.
+      allow create: if (isOwner(userId) && request.resource.data.role == 'student') || isAdmin() || isTeacher();
       
       // Profile updates: Users can update preferences / displayName, but CANNOT elevate role,
-      // alter email, or toggle isActive status.
+      // alter email, or toggle isActive status unless authorized as Teacher or Admin.
       allow update: if (isOwner(userId) && 
                         request.resource.data.role == resource.data.role &&
                         request.resource.data.email == resource.data.email &&
                         (!('isActive' in request.resource.data) || request.resource.data.isActive == resource.data.isActive))
-                    || isAdmin();
-      allow delete: if isAdmin();
+                    || isAdmin()
+                    || isTeacher();
+      allow delete: if isAdmin() || isTeacher();
     }
 
     // ─── Teacher Invitations ────────────────────────────────────────────────
@@ -127,7 +128,11 @@ service cloud.firestore {
     // ─── Assessments & Attempts ─────────────────────────────────────────────
 
     match /assessments/{assessmentId} {
-      allow read: if isAuthenticated();
+      allow read: if isAuthenticated() && (
+        resource.data.status == 'published' || 
+        isCourseTeacher(resource.data.courseId) ||
+        isAdmin()
+      );
       allow create: if isTeacher() && 
                     request.resource.data.teacherId == request.auth.uid &&
                     isCourseTeacher(request.resource.data.courseId);
@@ -139,8 +144,14 @@ service cloud.firestore {
         resource.data.studentId == request.auth.uid || 
         isCourseTeacher(resource.data.courseId)
       );
-      allow create: if isStudent() && request.resource.data.studentId == request.auth.uid;
-      allow update: if isStudent() && resource.data.studentId == request.auth.uid;
+      allow create: if isAuthenticated() && (
+        request.resource.data.studentId == request.auth.uid || 
+        isCourseTeacher(request.resource.data.courseId)
+      );
+      allow update: if isAuthenticated() && (
+        resource.data.studentId == request.auth.uid || 
+        isCourseTeacher(resource.data.courseId)
+      );
       allow delete: if false;
     }
 
@@ -202,7 +213,10 @@ service cloud.firestore {
         resource.data.studentId == request.auth.uid || 
         isCourseTeacher(resource.data.courseId)
       );
-      allow create, update: if isTeacher() && isCourseTeacher(request.resource.data.courseId);
+      allow create, update: if isAuthenticated() && (
+        request.resource.data.studentId == request.auth.uid ||
+        isCourseTeacher(request.resource.data.courseId)
+      );
       allow delete: if isTeacher() && isCourseTeacher(resource.data.courseId);
     }
 

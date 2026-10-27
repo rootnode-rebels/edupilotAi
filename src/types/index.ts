@@ -38,8 +38,14 @@ export type {
   AssessmentDifficulty,
   AssessmentStatus,
   Assessment,
+  Question,
+  SanitizedQuestion,
+  AssessmentFeedbackSettings,
   AttemptStatus,
   AssessmentAttempt,
+  QuestionAttemptResult,
+  ConceptDiagnosticStatus,
+  ConceptDiagnosticSummary,
 } from './assessment';
 
 // ─── Knowledge & Concept Mapping ──────────────────────────────────────────────
@@ -116,3 +122,15 @@ export type {
   PaginationOptions,
   PaginatedResult,
 } from './database';
+
+// ─── Adaptive Learning Engine (Phase 10) ──────────────────────────────────────
+export type {
+  MasteryConfidence,
+  ConceptMasteryEstimate,
+  StudentCourseMasteryProfile,
+  IdentifiedLearningGap,
+  AdaptiveActivity,
+  AdaptivePlanResult,
+  StudentGapSummary,
+} from './adaptive';
+
