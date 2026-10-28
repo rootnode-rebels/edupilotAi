@@ -18,8 +18,8 @@ async function ensureServerAuth(): Promise<void> {
   if (typeof window === 'undefined' && !auth.currentUser) {
     try {
       await signInWithEmailAndPassword(auth, 'teacher@edupilot.ai', 'TeacherPass123!');
-    } catch {
-      // Ignore if offline
+    } catch (err: any) {
+      console.error('[ensureServerAuth] Failed to sign in:', err.message);
     }
   }
 }

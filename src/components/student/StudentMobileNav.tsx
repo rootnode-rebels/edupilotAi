@@ -34,10 +34,14 @@ export function StudentMobileNav() {
     },
   ];
 
+  const isTutor = pathname.startsWith("/student/ai-tutor");
+
   return (
     <nav
       aria-label="Mobile Navigation"
-      className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/90 backdrop-blur-lg border-t border-slate-200/80 px-4 py-2 pb-safe shadow-lg"
+      className={`md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/90 backdrop-blur-lg border-t border-slate-200/80 px-4 py-2 pb-safe shadow-lg transition-transform duration-300 ease-in-out ${
+        isTutor ? "translate-y-full" : "translate-y-0"
+      }`}
     >
       <div className="flex items-center justify-around max-w-md mx-auto">
         {navItems.map((item) => {

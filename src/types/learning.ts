@@ -13,8 +13,8 @@ export interface Concept {
   prerequisiteConceptIds?: string[];
   /** IDs of materials that cover this concept */
   materialIds?: string[];
-  /** Lifecycle status: active or safely archived */
-  status?: 'active' | 'archived';
+  /** Lifecycle status: active, safely archived, or marked invalid by cleanup pipeline */
+  status?: 'active' | 'archived' | 'invalid';
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }

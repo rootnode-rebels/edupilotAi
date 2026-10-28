@@ -7,6 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { logoutUser } from "@/services/auth/authService";
 import { generateStudentId } from "@/lib/studentId";
 import { StudentProfileModal } from "@/components/student/StudentProfileModal";
+import { StudentNotificationCenter } from "@/components/student/notifications/StudentNotificationCenter";
 import {
   Compass,
   BookOpen,
@@ -82,9 +83,13 @@ export function StudentSidebar() {
   const displayName = profile?.displayName || user?.displayName || user?.email?.split("@")[0] || "Student";
   const userInitials = displayName.slice(0, 2).toUpperCase();
 
+  const isTutor = pathname.startsWith("/student/ai-tutor");
+
   return (
     <>
-      <aside className="w-64 border-r border-slate-200/80 bg-[#FAFAF9] flex-col justify-between hidden md:flex min-h-screen sticky top-0 shrink-0 select-none z-20">
+      <aside className={`w-64 border-r border-slate-200/80 bg-[#FAFAF9] flex-col justify-between hidden md:flex min-h-screen sticky top-0 shrink-0 select-none z-20 transition-all duration-300 ease-in-out ${
+        isTutor ? "-ml-64 opacity-0 pointer-events-none" : "ml-0 opacity-100"
+      }`}>
         <div className="p-5 space-y-6">
           {/* Brand / Logo */}
           <Link href="/student/dashboard" className="flex items-center gap-2.5 group">
@@ -203,14 +208,17 @@ export function StudentSidebar() {
               <UserCheck className="w-3.5 h-3.5 text-slate-300 group-hover:text-indigo-500 shrink-0" />
             </button>
 
-            <button
-              onClick={handleLogout}
-              title="Sign out"
+            <div className="flex items-center gap-1 shrink-0">
+              <StudentNotificationCenter />
+              <button
+                onClick={handleLogout}
+                title="Sign out"
               className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
               aria-label="Sign out"
             >
-              <LogOut className="w-4 h-4" />
-            </button>
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       </aside>

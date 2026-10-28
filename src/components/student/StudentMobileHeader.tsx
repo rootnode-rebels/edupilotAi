@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { logoutUser } from "@/services/auth/authService";
 import { StudentProfileModal } from "@/components/student/StudentProfileModal";
+import { StudentNotificationCenter } from "@/components/student/notifications/StudentNotificationCenter";
 import { Sparkles, LogOut } from "lucide-react";
 
 export function StudentMobileHeader() {
@@ -21,9 +22,14 @@ export function StudentMobileHeader() {
   const displayName = profile?.displayName || user?.displayName || user?.email?.split("@")[0] || "Student";
   const userInitials = displayName.slice(0, 2).toUpperCase();
 
+  const pathname = usePathname();
+  const isTutor = pathname.startsWith("/student/ai-tutor");
+
   return (
     <>
-      <header className="md:hidden sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 py-3 flex items-center justify-between">
+      <header className={`md:hidden sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 py-3 flex items-center justify-between transition-transform duration-300 ease-in-out ${
+        isTutor ? "-translate-y-full" : "translate-y-0"
+      }`}>
         <Link href="/student/dashboard" className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-sm shadow-indigo-500/20">
             <Sparkles className="w-4 h-4 text-white" />
@@ -37,6 +43,7 @@ export function StudentMobileHeader() {
         </Link>
 
         <div className="flex items-center gap-2.5">
+          <StudentNotificationCenter />
           <button
             type="button"
             onClick={() => setIsProfileOpen(true)}

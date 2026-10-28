@@ -21,8 +21,10 @@ export const COLLECTIONS = {
   SUBMISSIONS: 'submissions',
 
   // ─── Assessments ───────────────────────────────────────────────────────────
+  // ─── Assessments ───────────────────────────────────────────────────────────
   ASSESSMENTS: 'assessments',
   ASSESSMENT_ATTEMPTS: 'assessment_attempts',
+  MOCK_TEST_SCHEDULES: 'mock_test_schedules',
 
   // ─── Learning Intelligence & Knowledge Layer ──────────────────────────────
   CONCEPTS: 'concepts',

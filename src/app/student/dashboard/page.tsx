@@ -8,7 +8,7 @@ import { materialService } from "@/services/materials/materialService";
 import { conceptService } from "@/services/knowledge/conceptService";
 import { learningService } from "@/services/learning/learningService";
 import { assessmentService } from "@/services/assessments/assessmentService";
-import type { Course, Concept, Material, LearningProfile, Assessment, AssessmentAttempt } from "@/types";
+import type { Course, Concept, Material, LearningProfile, Assessment, AssessmentAttempt, MockTestSchedule } from "@/types";
 import {
   Sparkles,
   ArrowRight,
@@ -18,6 +18,8 @@ import {
   Layers,
   Award,
   BookOpen,
+  CalendarDays,
+  Clock,
 } from "lucide-react";
 import { TakeAssessmentModal } from "@/components/student/TakeAssessmentModal";
 import { AdaptiveLearningPlan } from "@/components/student/AdaptiveLearningPlan";
@@ -37,6 +39,7 @@ export default function StudentDashboardPage() {
   const [publishedAssessments, setPublishedAssessments] = useState<Assessment[]>([]);
   const [latestAttempt, setLatestAttempt] = useState<AssessmentAttempt | null>(null);
   const [streakDays, setStreakDays] = useState(0);
+  const [mockTests, setMockTests] = useState<MockTestSchedule[]>([]);
 
   // Greet based on time of day and authentic student profile
   const hour = new Date().getHours();
@@ -88,12 +91,13 @@ export default function StudentDashboardPage() {
       try {
         const courseId = selectedCourse.id;
 
-        const [matRes, conRes, profRes, actRes, assRes] = await Promise.all([
+        const [matRes, conRes, profRes, actRes, assRes, mockRes] = await Promise.all([
           materialService.listCourseMaterials(courseId),
           conceptService.listCourseConcepts(courseId),
           learningService.getLearningProfile(user.uid, courseId),
           learningService.listStudentActivities(user.uid, courseId, 30),
-          assessmentService.listCourseAssessments(courseId),
+          assessmentService.listPublishedCourseAssessments(courseId),
+          fetch(`/api/courses/${courseId}/mock-tests`, { headers: { 'x-user-id': user.uid } }).then(r => r.json()),
         ]);
 
         if (ignore) return;
@@ -117,7 +121,7 @@ export default function StudentDashboardPage() {
         }
 
         if (assRes.success && assRes.data) {
-          const published = assRes.data.filter((a) => a.status === "published");
+          const published = assRes.data;
           setPublishedAssessments(published);
 
           // Find completed attempt
@@ -136,6 +140,12 @@ export default function StudentDashboardPage() {
         } else {
           setPublishedAssessments([]);
           setLatestAttempt(null);
+        }
+
+        if (mockRes.success && mockRes.data) {
+          setMockTests(mockRes.data);
+        } else {
+          setMockTests([]);
         }
 
         if (actRes.success && actRes.data) {
@@ -426,6 +436,40 @@ export default function StudentDashboardPage() {
             </div>
           )}
 
+          {/* Upcoming Mock Tests */}
+          {mockTests.length > 0 && (
+            <div className="pt-6 border-t border-slate-100">
+              <div className="flex items-center gap-2 mb-4">
+                <CalendarDays className="w-5 h-5 text-indigo-600" />
+                <h4 className="text-sm font-bold text-slate-900 tracking-tight">Upcoming Mock Tests</h4>
+              </div>
+              <div className="space-y-3">
+                {mockTests.map((test) => (
+                  <div key={test.id} className="p-4 rounded-2xl border border-indigo-100 bg-indigo-50/30 flex flex-col sm:flex-row justify-between gap-4">
+                    <div>
+                      <h5 className="text-sm font-bold text-slate-900">{test.title}</h5>
+                      <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-600 font-medium">
+                        <div className="flex items-center gap-1">
+                          <CalendarDays className="w-3.5 h-3.5 text-slate-400" />
+                          <span>{test.scheduledDate}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5 text-slate-400" />
+                          <span>{test.startTime} ({test.durationMinutes} min)</span>
+                        </div>
+                      </div>
+                      {test.topics.length > 0 && (
+                        <div className="mt-2 text-xs text-slate-500">
+                          Topics: {test.topics.join(', ')}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="pt-2 flex items-center justify-between text-xs text-slate-400">
             <span>
               {hasMastery ? "Calibrated from your diagnostic" : "Take diagnostic to calculate mastery"}
@@ -525,13 +569,13 @@ export default function StudentDashboardPage() {
               const courseId = selectedCourse.id;
               Promise.all([
                 learningService.getLearningProfile(user.uid, courseId),
-                assessmentService.listCourseAssessments(courseId),
+                assessmentService.listPublishedCourseAssessments(courseId),
               ]).then(([profRes, assRes]) => {
                 if (profRes.success && profRes.data) {
                   setLearningProfile(profRes.data);
                 }
                 if (assRes.success && assRes.data) {
-                  const published = assRes.data.filter((a) => a.status === "published");
+                  const published = assRes.data;
                   setPublishedAssessments(published);
                 }
               });

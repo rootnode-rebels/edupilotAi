@@ -48,6 +48,12 @@ export type {
   ConceptDiagnosticSummary,
 } from './assessment';
 
+// ─── Mock Tests ───────────────────────────────────────────────────────────────
+export type {
+  MockTestStatus,
+  MockTestSchedule,
+} from './mockTest';
+
 // ─── Knowledge & Concept Mapping ──────────────────────────────────────────────
 export type {
   ConceptRelationshipType,

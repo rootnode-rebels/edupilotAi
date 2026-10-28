@@ -10,10 +10,8 @@ import {
   Megaphone,
   CheckSquare,
   Sparkles,
-  Network,
   BarChart3,
   Bot,
-  ShieldAlert,
   CheckCircle2,
 } from "lucide-react";
 import type { Course, CourseStatus } from "@/types";
@@ -68,20 +66,7 @@ export function CourseWorkspaceNav({ course, onEditClick }: CourseWorkspaceNavPr
       icon: FileText,
       disabled: false,
     },
-    {
-      label: "Knowledge",
-      href: `${basePath}/knowledge`,
-      active: pathname.startsWith(`${basePath}/knowledge`),
-      icon: Network,
-      disabled: false,
-    },
-    {
-      label: "Conflicts",
-      href: `${basePath}/conflicts`,
-      active: pathname.startsWith(`${basePath}/conflicts`),
-      icon: ShieldAlert,
-      disabled: false,
-    },
+
     {
       label: "Announcements",
       href: `${basePath}/announcements`,
@@ -105,11 +90,10 @@ export function CourseWorkspaceNav({ course, onEditClick }: CourseWorkspaceNavPr
     },
     {
       label: "Analytics",
-      href: "#",
-      active: false,
+      href: `${basePath}/analytics`,
+      active: pathname.startsWith(`${basePath}/analytics`),
       icon: BarChart3,
-      disabled: true,
-      phase: "Phase 8",
+      disabled: false,
     },
     {
       label: "Agent Control",

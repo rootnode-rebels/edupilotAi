@@ -11,6 +11,7 @@ import {
   ChevronUp,
   Award,
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 import type { StudentGapSummary, AIRecommendation } from "@/types";
 
 interface TeacherAdaptiveInsightsProps {
@@ -18,6 +19,7 @@ interface TeacherAdaptiveInsightsProps {
 }
 
 export function TeacherAdaptiveInsights({ courseId }: TeacherAdaptiveInsightsProps) {
+  const { user, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [insights, setInsights] = useState<{
@@ -28,7 +30,10 @@ export function TeacherAdaptiveInsights({ courseId }: TeacherAdaptiveInsightsPro
     conceptDifficulties: Array<{
       conceptId: string;
       conceptName: string;
+      accuracy: number;
       failureRate: number;
+      totalQuestions: number;
+      correctAnswers: number;
       strugglingStudentCount: number;
       evaluatedStudentCount: number;
     }>;
@@ -42,14 +47,20 @@ export function TeacherAdaptiveInsights({ courseId }: TeacherAdaptiveInsightsPro
 
     async function fetchInsights() {
       if (!courseId) return;
+      if (authLoading) return;
+      if (!user?.uid) {
+        setLoading(false);
+        setError("Please sign in as a teacher to view course adaptive insights.");
+        return;
+      }
 
       try {
         setLoading(true);
         setError(null);
 
-        const res = await fetch(`/api/learning/teacher-insights?courseId=${courseId}`, {
+        const res = await fetch(`/api/learning/teacher-insights?courseId=${courseId}&userId=${user.uid}`, {
           headers: {
-            "x-user-id": typeof window !== "undefined" ? localStorage.getItem("edupilot_uid") || "" : "",
+            "x-user-id": user.uid,
           },
         });
 
@@ -73,7 +84,7 @@ export function TeacherAdaptiveInsights({ courseId }: TeacherAdaptiveInsightsPro
     return () => {
       ignore = true;
     };
-  }, [courseId]);
+  }, [courseId, user?.uid, authLoading]);
 
   if (loading) {
     return (
@@ -200,49 +211,120 @@ export function TeacherAdaptiveInsights({ courseId }: TeacherAdaptiveInsightsPro
 
         {conceptDifficulties.length === 0 ? (
           <div className="p-8 text-center text-slate-400 text-xs">
-            No concepts mapped or evaluated in this course yet.
+            No quiz data yet. Topics will appear here when students complete assessments.
           </div>
         ) : (
-          <div className="space-y-3">
-            {conceptDifficulties.map((item) => (
-              <div
-                key={item.conceptId}
-                className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 space-y-2"
-              >
-                <div className="flex items-center justify-between text-xs sm:text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-slate-900">{item.conceptName}</span>
-                    {item.failureRate > 50 && (
-                      <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold uppercase">
-                        High Bottleneck
-                      </span>
-                    )}
+          <div className="space-y-10">
+            {/* Horizontal Bar Chart for Topic Accuracy */}
+            <div className="pt-2">
+              <h4 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-6">Topic Accuracy Overview</h4>
+              <div className="space-y-4">
+                {conceptDifficulties.map(item => (
+                  <div key={`chart-${item.conceptId}`} className="group relative flex items-center gap-4">
+                    <div className="w-1/3 text-right text-xs font-semibold text-slate-800 truncate pr-2">
+                      {item.conceptName}
+                    </div>
+                    <div className="flex-1 h-6 bg-slate-100 rounded-md overflow-hidden flex">
+                      <div 
+                        className="h-full bg-indigo-500 transition-all duration-500" 
+                        style={{ width: `${item.accuracy}%` }}
+                      />
+                      <div 
+                        className="h-full bg-rose-400 transition-all duration-500" 
+                        style={{ width: `${item.failureRate}%` }}
+                      />
+                    </div>
+                    <div className="w-12 text-xs font-mono text-slate-500">
+                      {item.accuracy}%
+                    </div>
+                    
+                    {/* Tooltip */}
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 bg-slate-900 text-white text-xs rounded-lg p-3 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-lg border border-slate-700">
+                      <div className="font-bold mb-1 truncate">{item.conceptName}</div>
+                      <div className="flex justify-between border-b border-slate-700 pb-1 mb-1">
+                        <span className="text-slate-300">Accuracy:</span>
+                        <span className="font-mono text-emerald-400">{item.accuracy}%</span>
+                      </div>
+                      <div className="flex justify-between border-b border-slate-700 pb-1 mb-1">
+                        <span className="text-slate-300">Failure Rate:</span>
+                        <span className="font-mono text-rose-400">{item.failureRate}%</span>
+                      </div>
+                      <div className="flex justify-between border-b border-slate-700 pb-1 mb-1">
+                        <span className="text-slate-300">Correct / Graded:</span>
+                        <span className="font-mono">{item.correctAnswers} / {item.totalQuestions}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-300">Sample Size:</span>
+                        <span className="font-mono">{item.evaluatedStudentCount} students</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="font-semibold text-slate-700">
-                      {item.strugglingStudentCount} / {item.evaluatedStudentCount} struggling
-                    </span>
-                    <span className="text-xs text-slate-400 font-mono ml-2">
-                      ({item.failureRate}% difficulty)
-                    </span>
-                  </div>
+                ))}
+              </div>
+              {/* Legend */}
+              <div className="flex items-center justify-center gap-6 mt-8">
+                <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
+                  <div className="w-3 h-3 rounded-full bg-indigo-500" /> Accuracy (Correct)
                 </div>
-
-                {/* Visual Bar */}
-                <div className="w-full bg-slate-200/80 h-2 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${
-                      item.failureRate > 50
-                        ? "bg-red-500"
-                        : item.failureRate > 25
-                        ? "bg-amber-500"
-                        : "bg-emerald-500"
-                    }`}
-                    style={{ width: `${Math.max(5, item.failureRate)}%` }}
-                  />
+                <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
+                  <div className="w-3 h-3 rounded-full bg-rose-400" /> Failure Rate (Incorrect)
                 </div>
               </div>
-            ))}
+            </div>
+
+            {/* Ranked Difficulty List */}
+            <div>
+              <h4 className="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-4 border-t border-slate-100 pt-6">Ranked Difficulty List</h4>
+              <div className="space-y-3">
+                {conceptDifficulties.map((item) => (
+                  <div
+                    key={item.conceptId}
+                    className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 space-y-2"
+                  >
+                    <div className="flex items-center justify-between text-xs sm:text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900">{item.conceptName}</span>
+                        {item.failureRate >= 60 ? (
+                          <span className="text-[10px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                            Needs Attention
+                          </span>
+                        ) : item.failureRate >= 30 ? (
+                          <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                            Moderate
+                          </span>
+                        ) : (
+                          <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                            Performing Well
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <span className="font-semibold text-slate-700">
+                          {item.strugglingStudentCount} / {item.evaluatedStudentCount} struggling
+                        </span>
+                        <span className="text-xs text-slate-400 font-mono ml-2">
+                          ({item.failureRate}% failure)
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Accuracy Visual Bar */}
+                    <div className="w-full bg-slate-200/80 h-2 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          item.accuracy < 40
+                            ? "bg-rose-500"
+                            : item.accuracy < 70
+                            ? "bg-amber-500"
+                            : "bg-emerald-500"
+                        }`}
+                        style={{ width: `${item.accuracy}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -281,10 +363,19 @@ export function TeacherAdaptiveInsights({ courseId }: TeacherAdaptiveInsightsPro
                           <span className="text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full border border-slate-200">
                             Unassessed
                           </span>
-                        ) : student.activeGapCount > 0 ? (
-                          <span className="text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">
-                            {student.activeGapCount} {student.activeGapCount === 1 ? "Gap" : "Gaps"}
-                          </span>
+                        ) : student.activeGapCount > 0 || student.predictedGapCount > 0 ? (
+                          <div className="flex gap-1">
+                            {student.activeGapCount > 0 && (
+                              <span className="text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">
+                                {student.activeGapCount} {student.activeGapCount === 1 ? "Gap" : "Gaps"}
+                              </span>
+                            )}
+                            {student.predictedGapCount > 0 && (
+                              <span className="text-[10px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full border border-purple-200">
+                                {student.predictedGapCount} Predicted
+                              </span>
+                            )}
+                          </div>
                         ) : (
                           <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200">
                             On Track
@@ -306,7 +397,7 @@ export function TeacherAdaptiveInsights({ courseId }: TeacherAdaptiveInsightsPro
                       <span className="text-[10px] text-slate-400 block">Mastery Score</span>
                     </div>
 
-                    {student.strugglingConcepts.length > 0 && (
+                    {(student.strugglingConcepts.length > 0 || student.predictedConcepts?.length > 0) && (
                       <button
                         type="button"
                         onClick={() =>
@@ -328,26 +419,55 @@ export function TeacherAdaptiveInsights({ courseId }: TeacherAdaptiveInsightsPro
                 </div>
 
                 {/* Expanded Struggling Concepts Evidence */}
-                {expandedStudentId === student.studentId && student.strugglingConcepts.length > 0 && (
-                  <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-2 animate-in fade-in duration-150">
-                    <span className="text-xs font-bold uppercase tracking-wider text-amber-900 block">
-                      Specific Concept Difficulties &amp; Evidence:
-                    </span>
-                    <div className="space-y-2">
-                      {student.strugglingConcepts.map((sc) => (
-                        <div key={sc.conceptId} className="bg-white/90 p-3 rounded-xl border border-amber-200/80 text-xs space-y-1">
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-slate-900">{sc.conceptName}</span>
-                            <span className="font-mono text-amber-700 font-semibold">{sc.score}%</span>
-                          </div>
-                          <ul className="list-disc list-inside space-y-0.5 text-slate-500 text-[11px]">
-                            {sc.evidence.map((ev, i) => (
-                              <li key={i}>{ev}</li>
-                            ))}
-                          </ul>
+                {expandedStudentId === student.studentId && (
+                  <div className="space-y-3 mt-3 animate-in fade-in duration-150">
+                    {student.strugglingConcepts.length > 0 && (
+                      <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-2">
+                        <span className="text-xs font-bold uppercase tracking-wider text-amber-900 block">
+                          Specific Concept Difficulties &amp; Evidence:
+                        </span>
+                        <div className="space-y-2">
+                          {student.strugglingConcepts.map((sc) => (
+                            <div key={sc.conceptId} className="bg-white/90 p-3 rounded-xl border border-amber-200/80 text-xs space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-slate-900">{sc.conceptName}</span>
+                                <span className="font-mono text-amber-700 font-semibold">{sc.score}%</span>
+                              </div>
+                              <ul className="list-disc list-inside space-y-0.5 text-slate-500 text-[11px]">
+                                {sc.evidence.map((ev, i) => (
+                                  <li key={i}>{ev}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    )}
+
+                    {student.predictedConcepts?.length > 0 && (
+                      <div className="p-4 rounded-2xl bg-purple-50/70 border border-purple-200 space-y-2">
+                        <span className="text-xs font-bold uppercase tracking-wider text-purple-900 block">
+                          Predicted Upcoming Difficulties (Early Warning):
+                        </span>
+                        <div className="space-y-2">
+                          {student.predictedConcepts.map((pc) => (
+                            <div key={pc.conceptId} className="bg-white/90 p-3 rounded-xl border border-purple-200/80 text-xs space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-slate-900">{pc.conceptName}</span>
+                                <span className="text-[10px] bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full font-bold uppercase">
+                                  {pc.riskLevel} Risk
+                                </span>
+                              </div>
+                              <ul className="list-disc list-inside space-y-0.5 text-slate-500 text-[11px]">
+                                {pc.evidence.map((ev, i) => (
+                                  <li key={i}>{ev}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

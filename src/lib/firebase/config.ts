@@ -1,6 +1,6 @@
 import { initializeApp, getApps } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, getFirestore, memoryLocalCache } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -13,10 +13,42 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase only once
-export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+const isAlreadyInitialized = getApps().length > 0;
+export const app = isAlreadyInitialized ? getApps()[0] : initializeApp(firebaseConfig);
 
 // Auth and Firestore are used in Phase 2
 // Storage will be imported on-demand in Phase 5
-export const auth = getAuth(app);
-export const db = getFirestore(app);
+let authInstance: ReturnType<typeof getAuth> | any;
+try {
+  authInstance = getAuth(app);
+} catch (error) {
+  console.warn("Firebase Auth init failed (expected during Vercel build if env vars missing)");
+}
+export const auth = authInstance;
+
+let firestoreDb;
+try {
+  if (isAlreadyInitialized) {
+    firestoreDb = getFirestore(app);
+  } else {
+    if (typeof window !== 'undefined') {
+      firestoreDb = initializeFirestore(app, {
+        localCache: process.env.NODE_ENV === 'development' 
+          ? memoryLocalCache() 
+          : persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+      });
+    } else {
+      firestoreDb = getFirestore(app);
+    }
+  }
+} catch (e: any) {
+  // Fallback if already initialized (e.g. during HMR or SSR)
+  try {
+    firestoreDb = getFirestore(app);
+  } catch (err) {
+    console.warn("Firestore init failed (expected during Vercel build if env vars missing)");
+  }
+}
+
+export const db = firestoreDb as any;
 

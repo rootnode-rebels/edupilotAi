@@ -11,11 +11,11 @@ import { z } from 'zod';
 
 export const sourceReferenceSchema = z.object({
   materialId: z.string().min(1, 'materialId is required'),
-  materialTitle: z.string().optional(),
+  materialTitle: z.string().nullable().optional(),
   chunkId: z.string().min(1, 'chunkId is required'),
-  pageNumber: z.number().int().positive().optional(),
-  conceptId: z.string().optional(),
-  relevanceNote: z.string().optional(),
+  pageNumber: z.number().int().positive().nullable().optional(),
+  conceptId: z.string().nullable().optional(),
+  relevanceNote: z.string().nullable().optional(),
 });
 
 export type SourceReference = z.infer<typeof sourceReferenceSchema>;
@@ -79,7 +79,10 @@ export type ConflictAnalysisResponse = z.infer<typeof conflictAnalysisResponseSc
 export const aiExplanationResponseSchema = z.object({
   conceptName: z.string().min(1, 'conceptName is required'),
   explanation: z.string().min(1, 'Explanation is required'),
+  stepByStep: z.array(z.string()).default([]),
+  example: z.string().nullable().optional(),
   keyPoints: z.array(z.string()).default([]),
+  relatedConcepts: z.array(z.string()).default([]),
   sourceReferences: z.array(sourceReferenceSchema).default([]),
   insufficientContext: z.boolean().default(false),
   pedagogicalSuggestions: z.array(z.string()).default([]),
@@ -150,4 +153,43 @@ export interface AgnesCompletionResult<T> {
   requestId: string;
   model: string;
   durationMs: number;
+}
+
+// ─── AI Generated Assessment Question Schemas ────────────────────────────────
+
+export const aiGeneratedQuestionOptionSchema = z.object({
+  key: z.enum(['A', 'B', 'C', 'D']),
+  text: z.string().min(1, 'Option text is required'),
+});
+
+export const aiGeneratedQuestionSchema = z.object({
+  question: z.string().min(5, 'Question text must be at least 5 characters'),
+  codeSnippet: z.string().optional(),
+  options: z.array(aiGeneratedQuestionOptionSchema).length(4, 'Must provide exactly 4 options'),
+  correctAnswer: z.enum(['A', 'B', 'C', 'D']),
+  explanation: z.string().min(5, 'Explanation must be at least 5 characters'),
+  conceptId: z.string().optional(),
+  conceptName: z.string().optional(),
+  difficulty: z.enum(['easy', 'medium', 'hard']).default('medium'),
+});
+
+export type AIGeneratedQuestion = z.infer<typeof aiGeneratedQuestionSchema>;
+
+export const aiAssessmentQuestionsResponseSchema = z.object({
+  questions: z.array(aiGeneratedQuestionSchema).min(1),
+  pedagogicalRationale: z.string().optional(),
+});
+
+export type AIAssessmentQuestionsResponse = z.infer<typeof aiAssessmentQuestionsResponseSchema>;
+
+export interface GenerateAssessmentQuestionsInput {
+  courseId: string;
+  courseTitle: string;
+  courseSubject?: string;
+  concepts: Array<{ id: string; name: string; description?: string }>;
+  materialSummaries?: string[];
+  numQuestions?: number;
+  difficulty?: 'easy' | 'medium' | 'hard' | 'mixed';
+  language?: string;
+  userId: string;
 }

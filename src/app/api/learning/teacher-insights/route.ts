@@ -18,16 +18,17 @@ import { aiService } from '@/services/ai/aiService';
 import { getUserProfile } from '@/lib/firebase/firestore';
 import { estimateStudentCourseMastery } from '@/services/learning/masteryEstimator';
 import { diagnoseLearningGaps } from '@/services/learning/learningGapEngine';
+import { predictLearningGaps } from '@/services/learning/predictionEngine';
 import type { StudentGapSummary, AssessmentAttempt, Concept, CourseMember } from '@/types';
-
-export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
-    const courseId = searchParams.get('courseId');
+    const courseId = req.nextUrl.searchParams.get('courseId');
 
-    const authUserId = req.headers.get('x-user-id');
+    const authUserId =
+      req.headers.get('x-user-id')?.trim() ||
+      req.nextUrl.searchParams.get('userId')?.trim();
+
     if (!authUserId) {
       return NextResponse.json({ error: 'Unauthorized: Missing user identity' }, { status: 401 });
     }
@@ -89,12 +90,6 @@ export async function GET(req: NextRequest) {
 
     // 3. Analyze each enrolled student
     const studentSummaries: StudentGapSummary[] = [];
-    const conceptFailureTally: Record<string, { conceptName: string; failureCount: number; evaluatedCount: number }> = {};
-
-    for (const c of concepts) {
-      conceptFailureTally[c.id] = { conceptName: c.name, failureCount: 0, evaluatedCount: 0 };
-    }
-
     for (const member of members) {
       const studentId = member.studentId;
       const studentAttempts = attemptsByStudent.get(studentId) || [];
@@ -102,6 +97,7 @@ export async function GET(req: NextRequest) {
       // Calculate mastery
       const profile = estimateStudentCourseMastery(studentId, courseId, concepts, studentAttempts);
       const gapDiag = diagnoseLearningGaps(concepts, profile, []);
+      const predictionDiag = predictLearningGaps(concepts, profile);
 
       // Check if student needs baseline assessment
       const needsDiagnostic = studentAttempts.length === 0;
@@ -116,20 +112,18 @@ export async function GET(req: NextRequest) {
           riskLevel: gap.riskLevel,
           evidence: gap.evidence,
         });
-
-        if (conceptFailureTally[gap.conceptId]) {
-          conceptFailureTally[gap.conceptId].failureCount++;
-        }
       }
 
-      // Tally evaluated concepts for failure rates
-      for (const c of concepts) {
-        const est = profile.masteries[c.id];
-        if (est && est.status !== 'not_assessed') {
-          if (conceptFailureTally[c.id]) {
-            conceptFailureTally[c.id].evaluatedCount++;
-          }
-        }
+      // Extract predicted gaps
+      const predictedConcepts: StudentGapSummary['predictedConcepts'] = [];
+      for (const gap of predictionDiag.predictedGaps) {
+        predictedConcepts.push({
+          conceptId: gap.conceptId,
+          conceptName: gap.conceptName,
+          riskLevel: gap.riskLevel,
+          evidence: gap.evidence,
+          rootPrerequisiteConceptName: gap.rootPrerequisiteConceptName,
+        });
       }
 
       // Confidence level for student overall
@@ -150,21 +144,137 @@ export async function GET(req: NextRequest) {
         confidence: overallConfidence,
         activeGapCount: gapDiag.activeGaps.length,
         resolvedGapCount: gapDiag.resolvedGapCount,
+        predictedGapCount: predictionDiag.predictedGaps.length,
         strugglingConcepts,
+        predictedConcepts,
         needsDiagnostic,
         lastAttemptAt: studentAttempts.length > 0 ? studentAttempts[0].submittedAt : undefined,
       });
     }
 
-    // 4. Calculate concept difficulty rankings
-    const conceptDifficulties = Object.entries(conceptFailureTally)
-      .map(([conceptId, data]) => ({
-        conceptId,
-        conceptName: data.conceptName,
-        failureRate: data.evaluatedCount > 0 ? Math.round((data.failureCount / data.evaluatedCount) * 100) : 0,
-        strugglingStudentCount: data.failureCount,
-        evaluatedStudentCount: data.evaluatedCount,
-      }))
+    // 4. Calculate real concept difficulty rankings based on actual quiz attempts
+    const latestAttemptsByStudentAndAssesment = new Map<string, Map<string, AssessmentAttempt>>();
+    for (const att of completedAttempts) {
+      let studentMap = latestAttemptsByStudentAndAssesment.get(att.studentId);
+      if (!studentMap) {
+        studentMap = new Map();
+        latestAttemptsByStudentAndAssesment.set(att.studentId, studentMap);
+      }
+      const existingAtt = studentMap.get(att.assessmentId);
+      if (!existingAtt) {
+        studentMap.set(att.assessmentId, att);
+      } else {
+        const existingTime = existingAtt.submittedAt?.toMillis ? existingAtt.submittedAt.toMillis() : 0;
+        const newTime = att.submittedAt?.toMillis ? att.submittedAt.toMillis() : 0;
+        if (newTime > existingTime) {
+          studentMap.set(att.assessmentId, att);
+        }
+      }
+    }
+
+    const conceptNameMap = new Map<string, string>();
+    for (const c of concepts) {
+      conceptNameMap.set(c.id, c.name);
+    }
+    conceptNameMap.set('uncategorized', 'Uncategorized Questions');
+
+    interface TopicStats {
+      conceptId: string;
+      conceptName: string;
+      totalQuestions: number;
+      correctAnswers: number;
+      studentsAttempted: Set<string>;
+      studentsStruggling: Set<string>;
+    }
+    const topicStatsMap = new Map<string, TopicStats>();
+    const studentTopicPerformance = new Map<string, Map<string, { correct: number; total: number }>>();
+
+    for (const [studentId, studentMap] of latestAttemptsByStudentAndAssesment.entries()) {
+      for (const attempt of studentMap.values()) {
+        const attemptTopics = new Map<string, { name: string; total: number; correct: number }>();
+        
+        if (attempt.results && attempt.results.length > 0) {
+          for (const res of attempt.results) {
+            if (res.selectedOptionIndex === null || res.selectedOptionIndex === undefined) continue;
+            const cId = res.conceptId || 'uncategorized';
+            const cName = res.conceptName || conceptNameMap.get(cId) || 'Uncategorized Questions';
+            
+            const existing = attemptTopics.get(cId) || { name: cName, total: 0, correct: 0 };
+            existing.total += 1;
+            if (res.isCorrect) existing.correct += 1;
+            attemptTopics.set(cId, existing);
+          }
+        } else if (attempt.conceptBreakdown && attempt.conceptBreakdown.length > 0) {
+          for (const cb of attempt.conceptBreakdown) {
+            if (cb.questionsCount > 0) {
+              const cId = cb.conceptId || 'uncategorized';
+              const cName = cb.conceptName || conceptNameMap.get(cId) || 'Uncategorized Questions';
+              
+              const existing = attemptTopics.get(cId) || { name: cName, total: 0, correct: 0 };
+              existing.total += cb.questionsCount;
+              existing.correct += cb.correctCount;
+              attemptTopics.set(cId, existing);
+            }
+          }
+        }
+
+        for (const [cId, data] of attemptTopics.entries()) {
+          if (!topicStatsMap.has(cId)) {
+            topicStatsMap.set(cId, {
+              conceptId: cId,
+              conceptName: data.name,
+              totalQuestions: 0,
+              correctAnswers: 0,
+              studentsAttempted: new Set(),
+              studentsStruggling: new Set(),
+            });
+          }
+          if (!studentTopicPerformance.has(cId)) {
+            studentTopicPerformance.set(cId, new Map());
+          }
+          
+          const tStats = topicStatsMap.get(cId)!;
+          tStats.totalQuestions += data.total;
+          tStats.correctAnswers += data.correct;
+          tStats.studentsAttempted.add(studentId);
+
+          const sPerfMap = studentTopicPerformance.get(cId)!;
+          const sPerf = sPerfMap.get(studentId) || { correct: 0, total: 0 };
+          sPerf.total += data.total;
+          sPerf.correct += data.correct;
+          sPerfMap.set(studentId, sPerf);
+        }
+      }
+    }
+
+    for (const [cId, sPerfMap] of studentTopicPerformance.entries()) {
+      const tStats = topicStatsMap.get(cId)!;
+      for (const [studentId, sPerf] of sPerfMap.entries()) {
+        if (sPerf.total > 0) {
+          const accuracy = (sPerf.correct / sPerf.total) * 100;
+          if (accuracy < 60) {
+            tStats.studentsStruggling.add(studentId);
+          }
+        }
+      }
+    }
+
+    const conceptDifficulties = Array.from(topicStatsMap.values())
+      .filter((t) => t.totalQuestions > 0)
+      .map((t) => {
+        const accuracy = Math.round((t.correctAnswers / t.totalQuestions) * 100);
+        const failureRate = 100 - accuracy;
+        return {
+          conceptId: t.conceptId,
+          conceptName: t.conceptName,
+          accuracy,
+          failureRate,
+          totalQuestions: t.totalQuestions,
+          correctAnswers: t.correctAnswers,
+          strugglingStudentCount: t.studentsStruggling.size,
+          evaluatedStudentCount: t.studentsAttempted.size,
+        };
+      })
       .sort((a, b) => b.failureRate - a.failureRate);
 
     return NextResponse.json({

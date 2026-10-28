@@ -63,6 +63,16 @@ body {
   animation: orb-pulse 4s ease-in-out infinite;
 }
 
+/* Floating animation for spheres */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
 /* Glassmorphism helpers */
 .glass-panel {
   background: rgba(255, 255, 255, 0.82);

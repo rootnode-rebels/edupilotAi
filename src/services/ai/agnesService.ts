@@ -23,10 +23,15 @@ import {
   agnesTestResponseSchema,
   ConflictAnalysisResponse,
   conflictAnalysisResponseSchema,
+  AIAssessmentQuestionsResponse,
+  aiAssessmentQuestionsResponseSchema,
+  GenerateAssessmentQuestionsInput,
   buildAnalysisSystemPrompt,
   buildExplanationSystemPrompt,
   buildHealthTestPrompt,
   buildConflictAnalysisSystemPrompt,
+  buildAssessmentQuestionsSystemPrompt,
+  buildAssessmentQuestionsUserPrompt,
   normalizeAgnesError,
 } from './agnes';
 import { buildGroundingContext, ContextBuilderError } from './context';
@@ -46,6 +51,8 @@ export interface ExplainConceptParams {
   courseId: string;
   concept: Concept;
   selectedChunks: MaterialChunk[];
+  question?: string;
+  level?: string;
   language?: string;
   userId: string;
   materialTitles?: Record<string, string>;
@@ -228,13 +235,27 @@ export const agnesService = {
 
       // 2. Prepare grounded explanation prompt
       const systemPrompt = buildExplanationSystemPrompt(params.concept.name, params.language);
-      const userPrompt = [
+      
+      const promptParts = [
         `Target Concept: "${params.concept.name}" (ID: ${params.concept.id})`,
         '',
         contextResult.formattedContext,
         '',
         `Explain "${params.concept.name}" strictly using the sources provided above.`,
-      ].join('\n');
+      ];
+      
+      if (params.question) {
+        promptParts.push('');
+        promptParts.push(`The student has additionally asked the following question: "${params.question}"`);
+        promptParts.push(`Please incorporate the answer to this question in your explanation, using ONLY the provided sources.`);
+      }
+
+      if (params.level) {
+        promptParts.push('');
+        promptParts.push(`CRITICAL INSTRUCTION: Tailor your explanation to a ${params.level.toUpperCase()} difficulty level.`);
+      }
+      
+      const userPrompt = promptParts.join('\n');
 
       const messages: AgnesChatMessage[] = [
         { role: 'system', content: systemPrompt },
@@ -278,7 +299,7 @@ export const agnesService = {
 
       return {
         success: false,
-        error: normalized.safeUserMessage,
+        error: `${normalized.safeUserMessage} - DEBUG: ${err instanceof Error ? err.message : String(err)}`,
       };
     }
   },
@@ -405,6 +426,74 @@ export const agnesService = {
           courseId: params.courseId,
           eventType: 'source_conflict',
           summary: `Conflict analysis failed: ${params.chunkA.materialId} vs ${params.chunkB.materialId}`,
+          reasoning: `Failure: ${normalized.code} — ${normalized.safeUserMessage}. Request: ${aiRequestId}.`,
+        })
+        .catch(() => {});
+
+      return {
+        success: false,
+        error: normalized.safeUserMessage,
+      };
+    }
+  },
+
+  /**
+   * Diagnostic assessment question generator using Agnes 3.0 Flash.
+   */
+  async generateAssessmentQuestions(
+    params: GenerateAssessmentQuestionsInput & { client?: AgnesClient }
+  ): Promise<DbResult<AIAssessmentQuestionsResponse>> {
+    const client = params.client || agnesClient;
+    const aiRequestId = `qgen_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+    try {
+      const messages: AgnesChatMessage[] = [
+        {
+          role: 'system',
+          content: buildAssessmentQuestionsSystemPrompt(params.language),
+        },
+        {
+          role: 'user',
+          content: buildAssessmentQuestionsUserPrompt({
+            courseTitle: params.courseTitle,
+            courseSubject: params.courseSubject,
+            concepts: params.concepts,
+            materialSummaries: params.materialSummaries,
+            numQuestions: params.numQuestions || 5,
+            difficulty: params.difficulty || 'medium',
+          }),
+        },
+      ];
+
+      const res = await client.completeChat<AIAssessmentQuestionsResponse>(
+        messages,
+        aiAssessmentQuestionsResponseSchema,
+        {
+          requestId: aiRequestId,
+          temperature: 0.3,
+          maxTokens: 2500,
+        }
+      );
+
+      // Audit log decision event
+      await aiService
+        .logDecisionEvent({
+          courseId: params.courseId,
+          eventType: 'recommendation',
+          summary: `Drafted ${res.data.questions.length} diagnostic assessment questions via Agnes 3.0 Flash`,
+          reasoning: res.data.pedagogicalRationale || 'AI drafted diagnostic question set for teacher review.',
+        })
+        .catch(() => {});
+
+      return { success: true, data: res.data };
+    } catch (err: unknown) {
+      const normalized = normalizeAgnesError(err, aiRequestId);
+
+      await aiService
+        .logDecisionEvent({
+          courseId: params.courseId,
+          eventType: 'recommendation',
+          summary: `Assessment question generation failed`,
           reasoning: `Failure: ${normalized.code} — ${normalized.safeUserMessage}. Request: ${aiRequestId}.`,
         })
         .catch(() => {});

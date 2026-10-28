@@ -119,6 +119,7 @@ import type {
   Notification,
   SourceProfile,
   SourceConflict,
+  MockTestSchedule,
 } from '@/types';
 
 export const courseCollection = () =>
@@ -200,3 +201,6 @@ export const sourceProfileCollection = () =>
 
 export const sourceConflictCollection = () =>
   typedCollection<SourceConflict>(COLLECTIONS.SOURCE_CONFLICTS);
+
+export const mockTestScheduleCollection = () =>
+  typedCollection<MockTestSchedule>(COLLECTIONS.MOCK_TEST_SCHEDULES);
